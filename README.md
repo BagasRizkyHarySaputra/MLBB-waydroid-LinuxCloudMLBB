@@ -10,6 +10,8 @@
 
 Run **Mobile Legends: Bang Bang (MLBB)** on Linux via Waydroid — and optionally stream it to your Android phone so the laptop does the heavy lifting and the phone stays cool.
 
+![Mobile Legends running in Waydroid on Linux](assets/screenshot-lobby.jpg)
+
 >  **BAN RISK — READ THIS FIRST**
 >
 > MLBB's anti-cheat (Moonton) is not rejected by this setup today, and the game is
