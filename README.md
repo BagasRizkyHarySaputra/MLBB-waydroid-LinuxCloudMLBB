@@ -1,5 +1,13 @@
 # mlbb-waydroid
 
+[![Platform](https://img.shields.io/badge/platform-Linux-informational?logo=linux&logoColor=white)](#requirements)
+[![Waydroid](https://img.shields.io/badge/powered%20by-Waydroid-blue)](https://waydroid.com/)
+[![Streaming](https://img.shields.io/badge/streaming-Sunshine%20%2B%20Artemis-orange)](docs/STREAMING.md)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Shell](https://img.shields.io/badge/shell-bash-89e051?logo=gnubash&logoColor=white)](#usage--the-mlbb-command)
+[![Tested on](https://img.shields.io/badge/tested%20on-Kali%20%2B%20Hyprland-268BEE)](docs/WAYDROID-SETUP.md)
+
+
 Run **Mobile Legends: Bang Bang (MLBB)** on Linux via Waydroid — and optionally stream it to your Android phone so the laptop does the heavy lifting and the phone stays cool.
 
 >  **BAN RISK — READ THIS FIRST**
@@ -386,3 +394,26 @@ This project stands on the work of others:
 ## License
 
 [MIT](LICENSE) — do whatever you want, no warranty. See the [ban-risk disclaimer](#mlbb-waydroid) again before you use your main account.
+
+---
+
+## Keywords
+
+`Mobile Legends on Linux` · `MLBB Waydroid` · `play MLBB on PC` · `Linux cloud gaming`
+· `Waydroid game streaming` · `Sunshine Moonlight Linux` · `Artemis Moonlight fork`
+· `Hyprland Waydroid` · `Waydroid multi-touch` · `libhoudini x86_64 ARM translation`
+· `Intel VAAPI game streaming` · `Android game on GNU/Linux` · `Mobile Legends cloud gaming`
+· `MLBB phone streaming`
+
+---
+
+## See also
+
+| Project | What it is |
+|---|---|
+| [Waydroid](https://waydroid.com/) | Android in a container on Linux |
+| [casualsnek/waydroid_script](https://github.com/casualsnek/waydroid_script) | libhoudini & GApps installer for Waydroid |
+| [LizardByte/Sunshine](https://github.com/LizardByte/Sunshine) | The streaming host used here |
+| [ClassicOldSong/moonlight-android](https://github.com/ClassicOldSong/moonlight-android) | Artemis — the client with working multi-touch |
+| [Moonlight](https://moonlight-stream.org/) | The upstream streaming client |
+| [Hyprland](https://hyprland.org/) | The Wayland compositor used and tested |
