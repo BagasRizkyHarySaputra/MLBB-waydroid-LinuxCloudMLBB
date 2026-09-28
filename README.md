@@ -3,6 +3,7 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-informational?logo=linux&logoColor=white)](#requirements)
 [![Waydroid](https://img.shields.io/badge/powered%20by-Waydroid-blue)](https://waydroid.com/)
 [![Streaming](https://img.shields.io/badge/streaming-Sunshine%20%2B%20Artemis-orange)](docs/STREAMING.md)
+[![Release](https://img.shields.io/github/v/release/BagasRizkyHarySaputra/MLBB-waydroid-LinuxCloudMLBB?color=blueviolet)](https://github.com/BagasRizkyHarySaputra/MLBB-waydroid-LinuxCloudMLBB/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Shell](https://img.shields.io/badge/shell-bash-89e051?logo=gnubash&logoColor=white)](#usage--the-mlbb-command)
 [![Tested on](https://img.shields.io/badge/tested%20on-Kali%20%2B%20Hyprland-268BEE)](docs/WAYDROID-SETUP.md)
