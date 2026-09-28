@@ -1,0 +1,17 @@
+[Unit]
+Description=Sunshine game streaming host (Waydroid MLBB)
+After=waydroid-container.service
+Wants=waydroid-container.service
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=%t
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=LIBVA_DRIVER_NAME=iHD
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/sunshine
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

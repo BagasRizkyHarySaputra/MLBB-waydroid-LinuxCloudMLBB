@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# ============================================================
+#  cpu-profile - atur thermal/power profil (Intel pstate)
+#  Pakai: cpu-profile {quiet|balanced|performance|status}
+# ============================================================
+set -u
+NO_TURBO=/sys/devices/system/cpu/intel_pstate/no_turbo
+MAXPCT=/sys/devices/system/cpu/intel_pstate/max_perf_pct
+MINPCT=/sys/devices/system/cpu/intel_pstate/min_perf_pct
+
+set_pstate() { # $1=no_turbo $2=max_pct $3=min_pct
+  echo "$1" > "$NO_TURBO" 2>/dev/null || true
+  echo "$2" > "$MAXPCT"   2>/dev/null || true
+  echo "$3" > "$MINPCT"   2>/dev/null || true
+}
+
+# cari thermal zone berdasarkan nama tipe
+zone_temp() { # $1 = nama tipe (substring)
+  local z
+  for z in /sys/class/thermal/thermal_zone*; do
+    case "$(cat "$z/type" 2>/dev/null)" in
+      *"$1"*) awk '{printf "%.0f", $1/1000}' "$z/temp" 2>/dev/null; return ;;
+    esac
+  done
+}
+
+show() {
+  printf "  no_turbo  = %s\n" "$(cat $NO_TURBO 2>/dev/null)"
+  printf "  max_perf  = %s%%\n" "$(cat $MAXPCT 2>/dev/null)"
+  printf "  min_perf  = %s%%\n" "$(cat $MINPCT 2>/dev/null)"
+  printf "  governor  = %s\n" "$(cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor 2>/dev/null)"
+  printf "  pkg_temp  = %s C\n" "$(zone_temp x86_pkg_temp)"
+  printf "  acpitz    = %s C\n" "$(zone_temp acpitz)"
+}
+
+case "${1:-status}" in
+  quiet)       set_pstate 1 60 20;  echo "profil: QUIET (turbo off, max 60%)"; show ;;
+  balanced)    set_pstate 0 85 20;  echo "profil: BALANCED (turbo on, max 85%)"; show ;;
+  performance) set_pstate 0 100 30; echo "profil: PERFORMANCE (turbo on, max 100%)"; show ;;
+  status|*)    echo "STATUS sekarang:"; show ;;
+esac

@@ -1,0 +1,20 @@
+# backup & temp
+*.bak
+*.bak.*
+*.orig
+*.rej
+*.tmp
+*~
+
+# log
+*.log
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp

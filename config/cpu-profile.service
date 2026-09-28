@@ -1,0 +1,11 @@
+[Unit]
+Description=CPU thermal profile (balanced) untuk cegah overheat
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/cpu-profile balanced
+
+[Install]
+WantedBy=multi-user.target

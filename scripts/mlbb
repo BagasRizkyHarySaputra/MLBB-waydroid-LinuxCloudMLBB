@@ -1,0 +1,325 @@
+#!/usr/bin/env bash
+# ============================================================
+#  mlbb - buka / tutup Waydroid + Mobile Legends (MLBB)
+#  dan kelola streaming ke HP (Sunshine + Artemis)
+#
+#  Pakai: mlbb <perintah> [opsi]
+#    lihat penjelasan lengkap: mlbb help
+#
+#  Catatan:
+#    - Multi-touch fix (wayland_pointer.idc) sudah persisten di overlay.
+#    - NAT diatur otomatis oleh udev saat waydroid0 muncul.
+# ============================================================
+set -u
+
+# ---------- konfigurasi ----------
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-1}"
+RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+WD=wayland-1
+WS=4                                    # workspace tempat ML tampil
+PKG=com.mobile.legends
+ACT=$PKG/com.moba.unityplugin.MobaGameMainActivityWithExtractor
+ADB_TARGET=192.168.240.112:5555
+SUDO_PW="${MLBB_SUDO_PW:-}"
+LOG=/tmp/mlbb.log
+
+log(){ printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$LOG"; }
+sud(){
+  if [ -n "${SUDO_PW:-}" ]; then
+    printf '%s\n' "$SUDO_PW" | sudo -S -p '' "$@"
+  else
+    sudo "$@"
+  fi
+}
+ok(){ printf '  \033[32m✓\033[0m %s\n' "$*"; }
+no(){ printf '  \033[31m✗\033[0m %s\n' "$*"; }
+
+# ---------- cek status ----------
+do_status(){
+  local sess cont ui ml sun
+  sess=$(waydroid status 2>/dev/null | awk -F'\t' '/Session:/{print $2}')
+  cont=$(waydroid status 2>/dev/null | awk -F'\t' '/Container:/{print $2}')
+  pgrep -f show-full-ui >/dev/null && ui=RUNNING || ui=off
+  pgrep -x sunshine       >/dev/null && sun=RUNNING || sun=off
+  ml=$(adb -s "$ADB_TARGET" shell pidof "$PKG" 2>/dev/null | tr -d '\r')
+  [ -n "$ml" ] && ml="RUNNING (pid $ml)" || ml=off
+
+  echo "== Status MLBB =="
+  printf '  %-16s %s\n' "Session:"   "${sess:-STOPPED}"
+  printf '  %-16s %s\n' "Container:" "${cont:-STOPPED}"
+  printf '  %-16s %s\n' "UI Android:" "$ui"
+  printf '  %-16s %s\n' "Mobile Legends:" "$ml"
+  printf '  %-16s %s\n' "Sunshine:"  "$sun"
+  printf '  %-16s %s\n' "NAT:"       "$(sud iptables -t nat -S POSTROUTING 2>/dev/null | grep -c 192.168.240)"
+  printf '  %-16s %s\n' "wayland_pointer:" "$(adb -s "$ADB_TARGET" shell "dumpsys input 2>/dev/null | grep -c wayland_pointer" 2>/dev/null | tr -d '\r') (0=fix multi-touch aktif)"
+
+  # tampilkan window waydroid
+  local win
+  win=$(hyprctl clients -j 2>/dev/null | /usr/bin/python3 -c "
+import json,sys
+for w in json.load(sys.stdin):
+    if w.get('class')=='Waydroid':
+        print(f\"ws {(w.get('workspace') or {}).get('id')} {w['size'][0]}x{w['size'][1]}\")" 2>/dev/null)
+  printf '  %-16s %s\n' "Window:" "${win:-tidak ada}"
+}
+
+# ---------- buka ----------
+do_up(){
+  log "=== buka MLBB ==="
+
+  # 1. binder (kalau belum)
+  systemctl is-active waydroid-container >/dev/null 2>&1 || sud systemctl start waydroid-container 2>/dev/null
+
+  # 2. session
+  if ! waydroid status 2>/dev/null | grep -q 'Session:.*RUNNING'; then
+    log "start waydroid session..."
+    nohup waydroid session start >/tmp/wd-session.log 2>&1 & disown
+    sleep 20
+  fi
+
+  # 3. NAT (biasanya udev sudah urus; ini jaga-jaga)
+  sud /usr/local/bin/waydroid-nat.sh >/dev/null 2>&1 || true
+
+  # 4. UI Android
+  if ! pgrep -f show-full-ui >/dev/null; then
+    log "buka UI Android..."
+    nohup setsid /usr/local/bin/wd-ui.sh </dev/null >/tmp/wd-ui.log 2>&1 &
+    # tunggu window muncul (maks 40s)
+    for _ in $(seq 1 20); do
+      sleep 2
+      hyprctl clients -j 2>/dev/null | grep -q '"class": "Waydroid"' && break
+    done
+  fi
+
+  # 5. pindah ke workspace 4 (rule hyprland auto-fullscreen)
+  local addr
+  addr=$(hyprctl clients -j 2>/dev/null | /usr/bin/python3 -c "
+import json,sys
+try:
+  print([w['address'] for w in json.load(sys.stdin) if w.get('class')=='Waydroid'][0])
+except Exception: pass" 2>/dev/null)
+  if [ -n "${addr:-}" ]; then
+    hyprctl dispatch movetoworkspace "$WS","address:$addr" >/dev/null 2>&1
+    hyprctl dispatch focuswindow     "address:$addr"          >/dev/null 2>&1
+    sleep 1
+    hyprctl dispatch fullscreen 0    "address:$addr"          >/dev/null 2>&1
+    ok "window Waydroid fullscreen di workspace $WS"
+  else
+    no "window Waydroid tidak muncul"
+  fi
+
+  # 6. adb: pastikan immersive + UI bersih (resolusi sudah diatur via prop)
+  adb connect "$ADB_TARGET" >/dev/null 2>&1
+  adb shell settings put global policy_control "immersive.full=*" >/dev/null 2>&1 || true
+  adb shell settings put system pointer_location 0              >/dev/null 2>&1 || true
+  adb shell pm list packages -d 2>/dev/null | grep -q googlequicksearchbox || {
+    adb shell settings put secure assistant "null"                 >/dev/null 2>&1
+    adb shell settings put secure voice_interaction_service "null" >/dev/null 2>&1
+    adb shell pm disable-user --user 0 com.google.android.googlequicksearchbox >/dev/null 2>&1
+  }
+
+  # 7. jalankan ML
+  log "jalankan Mobile Legends..."
+  # tunggu Android benar-benar siap (adb online) dulu
+  for _ in $(seq 1 15); do
+    adb connect "$ADB_TARGET" >/dev/null 2>&1
+    [ "$(adb -s "$ADB_TARGET" get-state 2>/dev/null | tr -d '\r')" = "device" ] && break
+    sleep 3
+  done
+  sleep 3
+  adb shell am start -n "$ACT" >/dev/null 2>&1
+
+  # 8. sunshine (untuk streaming ke HP)
+  if ! pgrep -x sunshine >/dev/null; then
+    log "start sunshine..."
+    LIBVA_DRIVER_NAME=iHD nohup sunshine >/tmp/sunshine.log 2>&1 & disown
+    sleep 6
+  fi
+
+  log "selesai. ML loading ~40-60s."
+  echo
+  do_status
+}
+
+# ---------- tutup ----------
+do_down(){
+  log "=== tutup MLBB ==="
+  # 1. ML
+  adb -s "$ADB_TARGET" shell am force-stop "$PKG" >/dev/null 2>&1 || true
+  ok "ML dihentikan"
+
+  # 2. sunshine (kalau tidak mau streaming tetap jalan)
+  if [ "${1:-}" = "--all" ]; then
+    pkill -x sunshine 2>/dev/null && ok "sunshine dihentikan"
+  fi
+
+  # 3. UI + session
+  pkill -f show-full-ui 2>/dev/null && ok "UI ditutup"
+  waydroid session stop >/dev/null 2>&1 && ok "session waydroid dihentikan"
+
+  # 4. container
+  sud systemctl stop waydroid-container >/dev/null 2>&1 && ok "container dihentikan"
+
+  # 5. bersihkan sisa yang suka nyangkut
+  sud pkill -9 -f "dhcp-range 192.168.240" 2>/dev/null || true
+  sud pkill -9 -f "waydroid-net"           2>/dev/null || true
+
+  log "selesai."
+}
+
+# ---------- ui saja ----------
+do_ui(){
+  if ! waydroid status 2>/dev/null | grep -q 'Session:.*RUNNING'; then
+    log "start session dulu..."
+    nohup waydroid session start >/tmp/wd-session.log 2>&1 & disown
+    sleep 20
+  fi
+  sud /usr/local/bin/waydroid-nat.sh >/dev/null 2>&1 || true
+  pgrep -f show-full-ui >/dev/null || nohup setsid /usr/local/bin/wd-ui.sh </dev/null >/tmp/wd-ui.log 2>&1 &
+  sleep 8
+  ok "UI Android dibuka"
+}
+
+# ---------- optimasi latency ----------
+IFACE=$(ip route 2>/dev/null | awk '/^default/{print $5; exit}')
+[ -z "${IFACE:-}" ] && IFACE=wlan0
+
+do_latency(){
+  local act="${1:-status}"
+  case "$act" in
+    on)
+      log "optimasi latency..."
+      if iw dev "$IFACE" get power_save 2>/dev/null | grep -q "on"; then
+        sud iw dev "$IFACE" set power_save off >/dev/null 2>&1 && ok "WiFi power_save OFF" || no "gagal power_save"
+      else
+        ok "WiFi power_save sudah OFF"
+      fi
+      local conn
+      conn=$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | awk -F: -v d="$IFACE" '$2==d{print $1; exit}')
+      [ -n "${conn:-}" ] && sud nmcli connection modify "$conn" wifi.powersave 2 >/dev/null 2>&1 && ok "nmcli powersave=off [$conn]"
+      sud /usr/local/bin/cpu-profile balanced >/dev/null 2>&1 && ok "cpu-profile balanced"
+      sud /usr/local/bin/gpu-tune.sh on >/dev/null 2>&1 && ok "iGPU freq tinggi"
+      echo
+      echo "  Set di Artemis (HP):"
+      echo "    bitrate 8-15 Mbps | 1280x720 | H.264 | 60fps | Optimize=ON"
+      ;;
+    off)
+      sud iw dev "$IFACE" set power_save on >/dev/null 2>&1 && ok "power_save ON (default)"
+      ;;
+    status|*)
+      local freq sig rate ps gw avg
+      freq=$(iw dev "$IFACE" link 2>/dev/null | awk '/freq/{print int($2)}')
+      sig=$(iw dev "$IFACE" link 2>/dev/null | awk '/signal/{print $2}')
+      rate=$(iw dev "$IFACE" link 2>/dev/null | awk '/rx bitrate/{print $3}')
+      ps=$(iw dev "$IFACE" get power_save 2>/dev/null | awk '{print $3}')
+      gw=$(ip route 2>/dev/null | awk '/^default/{print $3}')
+      avg=$(ping -c4 -W2 "$gw" 2>/dev/null | tail -1 | awk -F'/' '{print $5}')
+      echo "== Status Latency =="
+      printf '  %-16s %s\n' "interface:" "$IFACE"
+      printf '  %-16s %s\n' "IP:" "$(ip -4 addr show $IFACE 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1)"
+      printf '  %-16s %s\n' "wifi freq:" "${freq:-?} MHz"
+      printf '  %-16s %s\n' "signal:" "${sig:-?} dBm"
+      printf '  %-16s %s\n' "rate:" "${rate:-?} MBit/s"
+      printf '  %-16s %s\n' "power_save:" "$ps"
+      printf '  %-16s %s\n' "ping gateway:" "${avg:-?} ms avg"
+      echo
+      if [ -n "${freq:-}" ] && [ "$freq" -gt 4000 ] 2>/dev/null; then
+        echo "  Saran: 5GHz -> bitrate 20-30 Mbps, 1080p 60fps"
+      else
+        echo "  Saran: 2.4GHz -> bitrate 8-15 Mbps, 720p 60fps (bitrate tinggi = lag)"
+      fi
+      ;;
+  esac
+}
+
+# ---------- info koneksi Artemis ----------
+do_net(){
+  local ssid tsip
+  ssid=$(nmcli -t -f active,ssid dev wifi 2>/dev/null | awk -F: '/^yes/{print $2}')
+  tsip=$(tailscale ip -4 2>/dev/null | head -1)
+  local ipaddr
+  ipaddr=$(ip -4 addr show "$IFACE" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1 | head -1)
+  local sun=off; pgrep -x sunshine >/dev/null && sun=on
+  case "${1:-info}" in
+    addr) echo "${ipaddr:-?}" ;;
+    *)
+      echo "==================================================="
+      echo "  KONEKSI ARTEMIS  (cloud gaming MLBB)"
+      echo "==================================================="
+      printf '  %-14s %s\n' "Interface:" "$IFACE"
+      printf '  %-14s %s\n' "IP laptop:" "${ipaddr:-TIDAK ADA}"
+      [ -n "${ssid:-}" ] && printf '  %-14s %s\n' "WiFi/Hotspot:" "$ssid"
+      printf '  %-14s %s\n' "Sunshine:" "$sun"
+      [ -n "${tsip:-}" ] && printf '  %-14s %s\n' "Tailscale:" "$tsip (kalau beda jaringan)"
+      echo "---------------------------------------------------"
+      echo "  DI HP (Artemis):"
+      echo "   1. HP & laptop harus 1 jaringan"
+      echo "      (laptop nyambung hotspot HP = otomatis sama)"
+      echo "   2. Artemis -> Add Host Manually -> IP: ${ipaddr:-<ip-laptop>}"
+      echo "   3. Masukkan PIN yang muncul di laptop"
+      echo "   4. Pilih app 'Mobile Legends'"
+      echo "---------------------------------------------------"
+      [ "$sun" = off ] && echo "  !! Sunshine MATI. Jalankan: mlbb up"
+      echo "==================================================="
+      ;;
+  esac
+}
+
+# ---------- help ----------
+do_help(){
+  # warna hanya jika output ke terminal
+  local B="" D="" C="" N="" R=""
+  if [ -t 1 ]; then
+    B=$'\033[1m'; D=$'\033[2m'; C=$'\033[36m'; N=$'\033[0m'; R=$'\033[0m'
+  fi
+
+  # baris perintah: nama (14 kolom) + deskripsi
+  cmd(){ printf '  %s%-13s%s %s\n' "$C$B" "$1" "$N" "$2"; }
+  sub(){ printf '  %s└ %-11s%s %s\n' "$D$C" "$1" "$N$D" "$2$R"; }
+  hdr(){ printf '\n  %s%s%s\n' "$B" "$1" "$N"; }
+
+  printf '%s\n' ""
+  printf '  %s%s%s  %s%s%s\n' "$B" "mlbb" "$N" "$D" "Mobile Legends (Waydroid) + streaming ke HP" "$N"
+  printf '  %s\n' "────────────────────────────────────────────────────────"
+
+  hdr "PEMAKAIAN"
+  printf '  %s%s%s\n' "$C" "mlbb <perintah> [opsi]" "$N"
+
+  hdr "PERINTAH"
+  cmd "up, start"   "Buka Waydroid + UI, jalankan ML & Sunshine"
+  cmd "down, stop"  "Tutup ML + UI + session + container"
+  sub "--all"         "sekalian matikan Sunshine"
+  cmd "restart"     "down lalu up ${D}(berat — pakai 'up' saja)${N}"
+  cmd "status, st"  "Status semua komponen (session, ML, NAT, dll)"
+  cmd "ui"          "Buka UI Android saja ${D}(tanpa ML)${N}"
+  cmd "net"         "Info koneksi Artemis + langkah pairing"
+  sub "addr"          "cetak IP laptop saja"
+  cmd "latency"     "Optimasi latency streaming"
+  sub "on"            "power_save off + tune CPU/iGPU"
+  sub "off"           "kembalikan power_save"
+  sub "status"        "cek WiFi/ping + saran bitrate"
+  cmd "help"        "Bantuan ini ${D}(-h / --help)${N}"
+
+  hdr "CONTOH"
+  printf '  %s%-21s%s %s\n' "$C" "mlbb"                "$N" "Buka & langsung main"
+  printf '  %s%-21s%s %s\n' "$C" "mlbb status"         "$N" "Cek kondisi semua komponen"
+  printf '  %s%-21s%s %s\n' "$C" "mlbb latency status" "$N" "Cek jaringan + saran bitrate"
+  printf '  %s%-21s%s %s\n' "$C" "mlbb net"            "$N" "Cara connect Artemis dari HP"
+  printf '  %s%-21s%s %s\n' "$C" "mlbb down --all"     "$N" "Matikan semua (termasuk Sunshine)"
+  printf '%s\n' ""
+}
+
+# ---------- main ----------
+case "${1:-up}" in
+  up|start|"")  do_up ;;
+  down|stop)    do_down "${2:-}" ;;
+  restart)      do_down; sleep 3; do_up ;;
+  status|st)    do_status ;;
+  ui)           do_ui ;;
+  latency|lat)  do_latency "${2:-status}" ;;
+  net|ip)       do_net "${2:-info}" ;;
+  help|--help|-h) do_help ;;
+  *) printf 'mlbb: perintah tidak dikenal: %s\n' "'$1'" >&2
+     printf 'Coba: mlbb help\n' >&2; exit 1 ;;
+esac

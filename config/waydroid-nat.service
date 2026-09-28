@@ -1,0 +1,13 @@
+[Unit]
+Description=NAT/firewall untuk Waydroid (internet di dalam container)
+After=waydroid-container.service network-online.target
+Wants=waydroid-container.service
+PartOf=waydroid-container.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/waydroid-nat.sh
+
+[Install]
+WantedBy=multi-user.target

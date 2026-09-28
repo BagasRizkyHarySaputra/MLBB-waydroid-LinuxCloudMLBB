@@ -1,0 +1,4 @@
+# Abaikan "Pen Tablet" yang dibuat Sunshine -> hilangkan konflik 2 device touch
+# (mencegah InputDispatcher "Dropping move event because a pointer for a
+#  different device is already active")
+ACTION=="add|change", KERNEL=="event*", ATTRS{name}=="libvirtualhid Pen Tablet", ENV{LIBINPUT_IGNORE_DEVICE}="1"

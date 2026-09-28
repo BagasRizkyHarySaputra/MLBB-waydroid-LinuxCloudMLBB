@@ -1,0 +1,2 @@
+# Terapkan NAT Waydroid otomatis saat interface waydroid0 muncul
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="waydroid0", TAG+="systemd", ENV{SYSTEMD_WANTS}="waydroid-nat.service"

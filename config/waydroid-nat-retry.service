@@ -1,0 +1,11 @@
+[Unit]
+Description=Re-apply NAT Waydroid setelah boot (retry)
+After=waydroid-nat.service
+Requires=waydroid-nat.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'for i in 1 2 3; do /usr/local/bin/waydroid-nat.sh && exit 0; sleep 10; done; exit 0'
+
+[Install]
+WantedBy=multi-user.target
